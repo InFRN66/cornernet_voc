@@ -28,7 +28,7 @@ def str2bool(s):
 def parse_args():
     parser = argparse.ArgumentParser(description="Test CornerNet")
     parser.add_argument("--cfg_file", help="config file", type=str)
-    parser.add_argument("--label_file", type=str, default="../MIRU2019/models/voc-model-labels.txt", help="The label file path.")
+    parser.add_argument("--label_file", type=str, help="The label file path.")
     parser.add_argument("--dataset", type=str, help="The root directory of the VOC dataset or Open Images dataset.")
     parser.add_argument("--eval_dir", default="eval_results", type=str, help="The directory to store evaluation results.")
     parser.add_argument("--mAP_iou_threshold", type=float, default=0.5, help="The threshold for mAP measurement.")
@@ -84,43 +84,40 @@ def group_annotation_by_class(dataset):
 def compute_average_precision_per_class(num_true_cases, gt_boxes, difficult_cases,
                                         prediction_file, iou_threshold, use_2007_metric):
 
-    """
-    num_true_cases : 実際にそのクラスに属するtarget総数
-    """
     with open(prediction_file) as f:
         image_ids = []
         boxes = []
         scores = []
-        for line in f: # そのクラス分のprediction box 全部読み込み
-            t = line.rstrip().split(" ") # t: [image_id, scores, boxes]
+        for line in f:
+            t = line.rstrip().split(" ")
             image_ids.append(t[0])
             scores.append(float(t[1]))
             box = torch.tensor([float(v) for v in t[2:]]).unsqueeze(0)
             box -= 1.0  # convert to python format where indexes start from 0
             boxes.append(box)
         scores = np.array(scores)
-        sorted_indexes = np.argsort(-scores) # -付きなのでlarger is firstでindex // 全ボックス内でconfidenceの高い順にsort
+        sorted_indexes = np.argsort(-scores)
         boxes = [boxes[i] for i in sorted_indexes]
         image_ids = [image_ids[i] for i in sorted_indexes]
         true_positive = np.zeros(len(image_ids))
         false_positive = np.zeros(len(image_ids))
         matched = set()
-        for i, image_id in enumerate(image_ids): # image_ids : このクラスと判断されたimageのid / gt_boxes : 実際にこのクラスだったボックス
+        for i, image_id in enumerate(image_ids):
             box = boxes[i]
             if image_id not in gt_boxes:
-                false_positive[i] = 1 # このクラスの物体box，と予測して実際は違った
+                false_positive[i] = 1
                 continue
 
-            gt_box = gt_boxes[image_id] # 多分複数ボックス（そのimage_id中のこのクラスの正解ボックス）
+            gt_box = gt_boxes[image_id]
             ious = box_utils.iou_of(box, gt_box)
             max_iou = torch.max(ious).item()
             max_arg = torch.argmax(ious).item()
-            if max_iou > iou_threshold: # 少なくともどれかのgtboxに対してIoU>しきい値であったpredictionが存在
+            if max_iou > iou_threshold:
                 if difficult_cases[image_id][max_arg] == 0:
-                    if (image_id, max_arg) not in matched: # これまで，同じimage_id中で今見てるボックス（max_arg）が検出されていない場合(not in match)
-                        true_positive[i] = 1 # max_argのボックス = true positive
+                    if (image_id, max_arg) not in matched:
+                        true_positive[i] = 1
                         matched.add((image_id, max_arg))
-                    else: # 同じgt_boxが既に検出され，true positiveとして数えられている:　同じ物体を重複してpredicしている場合など．
+                    else:
                         false_positive[i] = 1
             else:
                 false_positive[i] = 1
@@ -156,7 +153,7 @@ def eval():
     for i in range(len(dataset)):
         print("process image", i)
         image = dataset.get_image(i) # original [h,w,c]
-        boxes, labels, probs = predictor(nnet, image)  # [num_box, 4], [num_box], [num_box] // nms後のもの. prob_thrshold=..で無視するボックス設定
+        boxes, labels, probs = predictor(nnet, image)  # [num_box, 4], [num_box], [num_box]
         
         boxes = torch.from_numpy(boxes)
         labels = torch.from_numpy(labels)
@@ -176,7 +173,7 @@ def eval():
         if class_index == 0: continue  # ignore background
         prediction_path = eval_path / f"det_test_{class_name}.txt"
         with open(prediction_path, "w") as f:
-            sub = results[results[:, 1] == class_index, :] # class indexに該当する箇所だけ選択
+            sub = results[results[:, 1] == class_index, :]
             for i in range(sub.size(0)): # num_boxes in  this class
                 prob_box = sub[i, 2:].numpy()
                 image_id = dataset.ids[int(sub[i, 0])]
